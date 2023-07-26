@@ -6,4 +6,5 @@ This board main features:
 • MAX6675 as the temperature acquisition IC
 ![image](https://github.com/AmirulAminGH/ESPNOWsensors/assets/87349346/644c4e4d-79b9-4c7f-a73a-d2ad8e505660)
 ![image](https://github.com/AmirulAminGH/ESPNOWsensors/assets/87349346/660769a9-d2dd-4a6a-b0a6-164bb200f541)
+![image](https://github.com/AmirulAminGH/ESPNOWsensors/assets/87349346/1a399674-bf97-4e40-95c3-d7cdc7336b50)
 
