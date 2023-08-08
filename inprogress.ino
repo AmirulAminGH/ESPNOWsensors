@@ -5,6 +5,8 @@
 #include "SD.h"
 #include "SPI.h"
 #include <ESP32Time.h>
+//#define DEBUG true  //set to true for debug output, false for no debug output
+//#define Serial if(DEBUG)Serial
 //-------------LIBRARY DEFINITION END------------------
 
 //-------PIN DEFINITION BEGIN-------------------
@@ -30,8 +32,27 @@ const int TEMP2=3;
 //-------GLOBAL VAR INIT BEGIN----------------
 float temperature1=0.00;
 float temperature2=0.00;
-
 String namefile="";
+int recordState=0;
+unsigned long previousTask1Time = 0;
+const unsigned long task1Interval = 250;
+unsigned long previousTask2Time = 0;
+const unsigned long task2Interval = 3000;
+
+unsigned long buttonPressStartTime1 = 0;
+bool taskExecuted1 = false;
+unsigned long buttonPressStartTime2 = 0;
+bool taskExecuted2 = false;
+unsigned long buttonPressStartTime3 = 0;
+bool taskExecuted3 = false;
+unsigned long buttonPressStartTime4 = 0;
+bool taskExecuted4 = false;
+
+int serialState=0;
+int serialFlip=0;
+
+int idleState=1;
+
 //-------GLOBAL VAR INIT END----------------
 //--------LIBRARY INIT BEGIN-----------------
 MAX6675 thermocouple1(CLK1, TEMP1, MISO1);
@@ -42,6 +63,7 @@ ESP32Time rtc(0);
 //--------LIBRARY INIT END------------------
 //---------SETUP BEGIN---------------------------------------------------------------------------------------
 void setup(){
+   
   Serial.begin(115200);
   SPI.begin(7,8,9,-1);
   pinMode(RGBR,OUTPUT);
@@ -51,13 +73,13 @@ void setup(){
   pinMode(SW2,INPUT_PULLUP);
   pinMode(SW3,INPUT_PULLUP);
   pinMode(SW4,INPUT_PULLUP);
-  pinMode(SW5,INPUT_PULLUP);
-  
-  rgb(RGBR,500);
-  rgb(RGBG,500);
-  rgb(RGBB,500);
+  pinMode(SW5,INPUT);  
+  rgb(RGBR,50);
+  rgb(RGBG,50);
+  rgb(RGBB,50);
+  powerup();
   //while(digitalRead(SW5)==HIGH){int i=1;}  //----------RTC init & config
-  //rtc.setTime(0, 23, 14, 7, 8, 2023);       //---------ONLY REDO AFTER TOTAL POWER LOSS
+  //rtc.setTime(0, 41, 17, 8, 8, 2023);       //---------ONLY REDO AFTER TOTAL POWER LOSS
   // RTC=rtc.getTime("%A, %B %d %Y %H:%M:%S");
   
 
@@ -94,70 +116,136 @@ void setup(){
     uint64_t cardSize = SD.cardSize() / (1024 * 1024);
     Serial.printf("SD Card Size: %lluMB\n", cardSize);
      createDir(SD, "/SensorData");
-     writeFile(SD,filename, "Date,Time,Sensor1,Sensor2\n");
+     //writeFile(SD,filename, "Date,Time,Sensor1,Sensor2\n");
 
   }
 //---------SETUP END------------------------------------------------------------------------------------------
 //---------LOOP BEGIN-----------------------------------------------------------------------------------------
 void loop(){
-   Serial.println(rtc.getTime("%A, %B %d %Y %H:%M:%S"));
-   const char * filename=namefile.c_str();
-   String dateTime= rtc.getTime("%B%d%Y,%H:%M:%S,");
-   //String DAQdata= temperature1 + "," temperature2 + "\n"
-   String dataStream=dateTime;
-   const char * streamData= dataStream.c_str();
-   char data1[10];
-   char data2[10];
-   char comma[]=",";
-   char eol[]="\n";
-   dtostrf(temperature1, 6, 2, data1);
-   dtostrf(temperature2, 6, 2, data2);
-   char datainbound[100];
-   strcpy(datainbound,streamData);
-   strcat(datainbound,data1);
-   strcat(datainbound,comma);
-   strcat(datainbound,data2);
-   strcat(datainbound,eol);
-
-   SPI.begin(7,8,9,-1);
-   SD.begin(1);
-   appendFile(SD,filename, datainbound);
-   SD.end();
-   SPI.end();
-
-  MAX6675 thermocouple1(CLK1, TEMP1, MISO1);
-  MAX6675 thermocouple2(CLK1, TEMP2, MISO1);
+    if (serialFlip==1){
+      serialFlip=0;
+      if(serialState==1){Serial.begin(115200);rgb(RGBB,500);rgb(RGBB,500);}
+      if(serialState==0){Serial.end();rgb(RGBR,500);rgb(RGBR,50);}
+      }
     
-  if (digitalRead(SW1)==LOW){
-    rgb(RGBR,50);
-    beep(3000,25);
+    unsigned long currentTime = millis();
+    if (currentTime - previousTask1Time >= task1Interval) {
+      previousTask1Time = currentTime;
+       if (recordState==1){
+        Serial.println(rtc.getTime("%A, %B %d %Y %H:%M:%S"));
+        const char * filename=namefile.c_str();
+        String dateTime= rtc.getTime("%B%d%Y,%H:%M:%S,");
+        //String DAQdata= temperature1 + "," temperature2 + "\n"
+        String dataStream=dateTime;
+        const char * streamData= dataStream.c_str();
+        char data1[10];
+        char data2[10];
+        char comma[]=",";
+        char eol[]="\n";
+        dtostrf(temperature1, 6, 2, data1);
+        dtostrf(temperature2, 6, 2, data2);
+        char datainbound[100];
+        strcpy(datainbound,streamData);
+        strcat(datainbound,data1);
+        strcat(datainbound,comma);
+        strcat(datainbound,data2);
+        strcat(datainbound,eol);
+
+        SPI.begin(7,8,9,-1);
+        SD.begin(1);
+        appendFile(SD,filename, datainbound);
+        SD.end();
+        SPI.end();
+
+        MAX6675 thermocouple1(CLK1, TEMP1, MISO1);
+        MAX6675 thermocouple2(CLK1, TEMP2, MISO1);
+        temperature1=thermocouple1.readCelsius();
+        temperature2=thermocouple2.readCelsius();
+        Serial.print("C1 = "); 
+        Serial.println(temperature1);
+        Serial.print("C2 = "); 
+        Serial.println(temperature2);
+      }
+  }
+   unsigned long currentTime2 = millis();
+  if (currentTime2 - previousTask2Time >= task2Interval) {
+    previousTask2Time = currentTime2;
+    if (idleState==1){
+     digitalWrite(RGBG,HIGH);
+     digitalWrite(RGBR,HIGH);
+     digitalWrite(RGBB,HIGH);
+     delay(50);
+     digitalWrite(RGBG,LOW);
+     digitalWrite(RGBR,LOW);
+     digitalWrite(RGBB,LOW);
     }
+  }
+
+    
+    if (digitalRead(SW1) == LOW) {
+      if (!taskExecuted1) {
+      if (millis() - buttonPressStartTime1 >= 1000) {
+        executeTask1();
+        taskExecuted1= true;
+      }}} 
+      else {buttonPressStartTime1 = millis();taskExecuted1 = false; 
+      }
+      
      if (digitalRead(SW2)==LOW){
-    rgb(RGBG,50);
-    beep(3000,25);
+    
     }
       if (digitalRead(SW3)==LOW){
     rgb(RGBB,50);
-    beep(3000,25);
+    beep(4000,50);
     }
-      if (digitalRead(SW4)==LOW){
-    rgb(RGBR,50);
-    beep(3000,25);
-    }
-      if (digitalRead(SW5)==LOW){
-    rgb(RGBB,50);
-    beep(3000,25);
-    }
-    temperature1=thermocouple1.readCelsius();
-    temperature2=thermocouple2.readCelsius();
-   Serial.print("C1 = "); 
-   Serial.println(temperature1);
-   Serial.print("C2 = "); 
-   Serial.println(temperature2);
-   delay(250);
+    if (digitalRead(SW4) == LOW) {
+      if (!taskExecuted3) {
+      if (millis() - buttonPressStartTime3 >= 1000) {
+        executeTask3();
+        taskExecuted3= true;
+      }}} 
+      else {buttonPressStartTime3 = millis();taskExecuted3 = false; 
+      }
+    if (digitalRead(SW5) == HIGH) {
+      if (!taskExecuted2) {
+      if (millis() - buttonPressStartTime2 >= 1000) {
+        executeTask2();
+        taskExecuted2 = true;
+      }}} 
+      else {buttonPressStartTime2 = millis();taskExecuted2 = false; 
+      }
+
   }
 //---------LOOP END--------------------------------------------------------------------------------------------
 //---------------FUNCTIONS DEFINITION BEGIN---------
+
+void executeTask1(){
+   recordState = (recordState + 1) % 2;
+     if (recordState==1){
+    idleState=0;
+    String RTC= rtc.getTime("%A,%B%d%Y-%H%M%S");
+    namefile="/SensorData/"+RTC+".csv";
+    const char * filename=namefile.c_str();
+    writeFile(SD,filename, "Date,Time,Sensor1,Sensor2\n");
+      }
+      if (recordState==0){
+         idleState=1;
+        }
+    rgb(RGBR,50);
+    beep(4000,25);
+  }
+void executeTask2() {
+    rgb(RGBB,50);
+    powerdown();
+    delay(3000);
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_18,1);
+     Serial.println("Going to sleep now");
+      esp_deep_sleep_start();
+}
+void executeTask3(){
+    serialFlip=1;
+    serialState=(serialState+1)%2;
+  }
 void rgb(int pin, int ms){
   digitalWrite(pin,HIGH);
   delay(ms);
@@ -165,11 +253,30 @@ void rgb(int pin, int ms){
   delay(ms);
   }
  void beep(int freq ,int ms){
-   tone(buzzer, freq); // Send 1KHz sound signal...
+  tone(buzzer, freq); // Send 1KHz sound signal...
   delay(ms);        // ...for 1 sec
   noTone(buzzer);     // Stop sound...
   delay(ms);
   }
+ void powerup(){
+  int tempo=100;
+ // beep(2637,50);beep(2637,50);beep(0,50);beep(2637,50);
+ // beep(0,50);beep(2093,50);beep(2637,50);beep(0,50);
+ // beep(3136,50);beep(0,50);beep(0,50);beep(0,50);
+ // beep(1568,50);beep(0,50);beep(0,50);beep(0,50);
+//beep(2093,tempo);beep(2349,tempo);beep(2637,tempo);
+beep(2794,tempo);beep(3136,tempo);beep(3520,tempo);beep(3951,tempo);beep(0,tempo);
+}
+ void powerdown(){
+  int tempo=100;
+//  beep(2637,50);beep(2637,50);beep(0,50);beep(2637,50);
+//  beep(0,50);beep(2093,50);beep(2637,50);beep(0,50);
+//  beep(3136,50);beep(0,50);beep(0,50);beep(0,50);
+//  beep(1568,50);beep(0,50);beep(0,50);beep(0,50);
+beep(3951,tempo);beep(3520,tempo);beep(3136,tempo);beep(2794,tempo);
+//beep(2637,tempo);beep(2349,tempo);beep(2093,tempo);
+}
+
   void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
     Serial.printf("Listing directory: %s\n", dirname);
 
