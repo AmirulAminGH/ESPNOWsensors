@@ -5,8 +5,10 @@
 #include "SD.h"
 #include "SPI.h"
 #include <ESP32Time.h>
-//#define DEBUG true  //set to true for debug output, false for no debug output
-//#define Serial if(DEBUG)Serial
+#include <esp_now.h>
+#include <WiFi.h>
+
+uint8_t broadcastAddress[] = {0x34, 0x85, 0x18, 0x89, 0x2C, 0xC4};
 //-------------LIBRARY DEFINITION END------------------
 
 //-------PIN DEFINITION BEGIN-------------------
@@ -47,11 +49,20 @@ unsigned long buttonPressStartTime3 = 0;
 bool taskExecuted3 = false;
 unsigned long buttonPressStartTime4 = 0;
 bool taskExecuted4 = false;
+unsigned long buttonPressStartTime5 = 0;
+bool taskExecuted5 = false;
 
-int serialState=0;
+int serialState=1;
 int serialFlip=0;
 
 int idleState=1;
+
+typedef struct struct_message {int id; float x;float y;} struct_message;
+struct_message myData;
+esp_now_peer_info_t peerInfo;
+
+int networkStat=0;//0-offline//1-onlinesuccess//2-online fail
+int runmode=0;//0-online//1-offline
 
 //-------GLOBAL VAR INIT END----------------
 //--------LIBRARY INIT BEGIN-----------------
@@ -66,6 +77,14 @@ void setup(){
    
   Serial.begin(115200);
   SPI.begin(7,8,9,-1);
+  WiFi.mode(WIFI_STA);
+  if (esp_now_init() != ESP_OK) {Serial.println("Error initializing ESP-NOW");return;}
+  esp_now_register_send_cb(OnDataSent);
+  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
+  peerInfo.channel = 0;  
+  peerInfo.encrypt = false;
+  if (esp_now_add_peer(&peerInfo) != ESP_OK){Serial.println("Failed to add peer");return;}
+  
   pinMode(RGBR,OUTPUT);
   pinMode(RGBG,OUTPUT);
   pinMode(RGBB,OUTPUT);
@@ -132,6 +151,14 @@ void loop(){
     if (currentTime - previousTask1Time >= task1Interval) {
       previousTask1Time = currentTime;
        if (recordState==1){
+        if(runmode==0){
+        myData.id = 1;
+        myData.x = temperature1;
+        myData.y = temperature2;
+        esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &myData, sizeof(myData));
+        if (result == ESP_OK) {Serial.println("Sent with success");}
+        else {Serial.println("Error sending the data");}
+        }
         Serial.println(rtc.getTime("%A, %B %d %Y %H:%M:%S"));
         const char * filename=namefile.c_str();
         String dateTime= rtc.getTime("%B%d%Y,%H:%M:%S,");
@@ -191,13 +218,20 @@ void loop(){
       else {buttonPressStartTime1 = millis();taskExecuted1 = false; 
       }
       
-     if (digitalRead(SW2)==LOW){
-    
-    }
+if (digitalRead(SW2) == LOW) {
+      if (!taskExecuted4) {
+      if (millis() - buttonPressStartTime4 >= 1000) {
+        executeTask4();
+        taskExecuted4= true;
+      }}} 
+      else {buttonPressStartTime4 = millis();taskExecuted4 = false; }
+//----
+      
       if (digitalRead(SW3)==LOW){
     rgb(RGBB,50);
     beep(4000,50);
     }
+//-----   
     if (digitalRead(SW4) == LOW) {
       if (!taskExecuted3) {
       if (millis() - buttonPressStartTime3 >= 1000) {
@@ -218,7 +252,36 @@ void loop(){
   }
 //---------LOOP END--------------------------------------------------------------------------------------------
 //---------------FUNCTIONS DEFINITION BEGIN---------
-
+void onlineTone(){
+  int tempo=100;
+  digitalWrite(RGBB,HIGH);
+  beep(2306,tempo);beep(3456,tempo);beep(0,tempo);beep(2306,tempo);beep(3456,tempo);
+  digitalWrite(RGBB,LOW);
+  }
+void offlineTone(){
+  int tempo=100;
+  digitalWrite(RGBR,HIGH);
+  beep(3456,tempo);beep(2306,tempo);beep(0,tempo);beep(3456,tempo);beep(2306,tempo);
+  digitalWrite(RGBR,LOW);
+  }
+void executeTask4(){
+  runmode=(runmode+1)%2;
+  if (runmode==0){onlineTone();}
+  if (runmode==1){offlineTone();}
+  }
+void networkStatus(){
+  if (networkStat==1){rgb(RGBB,50);}
+  if (networkStat==2){rgb(RGBR,50);}
+  }
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  Serial.print("\r\nLast Packet Send Status:\t");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+  if (status == ESP_NOW_SEND_SUCCESS) {
+    networkStat=1;
+} else {
+    networkStat=2;
+}
+}
 void executeTask1(){
    recordState = (recordState + 1) % 2;
      if (recordState==1){
@@ -259,22 +322,22 @@ void rgb(int pin, int ms){
   delay(ms);
   }
  void powerup(){
-  int tempo=100;
+  int tempo=50;
  // beep(2637,50);beep(2637,50);beep(0,50);beep(2637,50);
  // beep(0,50);beep(2093,50);beep(2637,50);beep(0,50);
  // beep(3136,50);beep(0,50);beep(0,50);beep(0,50);
  // beep(1568,50);beep(0,50);beep(0,50);beep(0,50);
-//beep(2093,tempo);beep(2349,tempo);beep(2637,tempo);
+beep(2093,tempo);beep(2349,tempo);beep(2637,tempo);
 beep(2794,tempo);beep(3136,tempo);beep(3520,tempo);beep(3951,tempo);beep(0,tempo);
 }
  void powerdown(){
-  int tempo=100;
+  int tempo=50;
 //  beep(2637,50);beep(2637,50);beep(0,50);beep(2637,50);
 //  beep(0,50);beep(2093,50);beep(2637,50);beep(0,50);
 //  beep(3136,50);beep(0,50);beep(0,50);beep(0,50);
 //  beep(1568,50);beep(0,50);beep(0,50);beep(0,50);
 beep(3951,tempo);beep(3520,tempo);beep(3136,tempo);beep(2794,tempo);
-//beep(2637,tempo);beep(2349,tempo);beep(2093,tempo);
+beep(2637,tempo);beep(2349,tempo);beep(2093,tempo);
 }
 
   void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
@@ -365,14 +428,17 @@ void appendFile(fs::FS &fs, const char * path, const char * message){
     if(!file){
         Serial.println("Failed to open file for appending");
         rgb(RGBR,50);
+        if(runmode==0){networkStatus();}
         return;
     }
     if(file.print(message)){
         Serial.println("Message appended");
         rgb(RGBG,50);
+        if(runmode==0){networkStatus();}
     } else {
         Serial.println("Append failed");
         rgb(RGBR,50);
+        if(runmode==0){networkStatus();}
     }
     file.close();
 }
