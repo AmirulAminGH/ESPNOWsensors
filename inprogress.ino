@@ -8,7 +8,7 @@
 #include <esp_now.h>
 #include <WiFi.h>
 
-uint8_t broadcastAddress[] = {0x34, 0x85, 0x18, 0x89, 0x2C, 0xC4};
+uint8_t broadcastAddress[] = {0x70, 0x04, 0x1D, 0xA8, 0xB9, 0x1C};
 //-------------LIBRARY DEFINITION END------------------
 
 //-------PIN DEFINITION BEGIN-------------------
@@ -26,6 +26,9 @@ const int SW2=15;
 const int SW3=16;
 const int SW4=17;
 const int SW5=18;
+
+const int BATEN=10;
+const int BATTERY=4;
 
 const int SDCARD=1;
 const int TEMP1=2;
@@ -57,6 +60,9 @@ int serialFlip=0;
 
 int idleState=1;
 
+typedef struct struct_command {int id;int cmd;} struct_command;
+struct_command myCommand;
+
 typedef struct struct_message {int id; float x;float y;} struct_message;
 struct_message myData;
 esp_now_peer_info_t peerInfo;
@@ -80,6 +86,7 @@ void setup(){
   WiFi.mode(WIFI_STA);
   if (esp_now_init() != ESP_OK) {Serial.println("Error initializing ESP-NOW");return;}
   esp_now_register_send_cb(OnDataSent);
+  esp_now_register_recv_cb(OnDataRecv);
   memcpy(peerInfo.peer_addr, broadcastAddress, 6);
   peerInfo.channel = 0;  
   peerInfo.encrypt = false;
@@ -92,14 +99,16 @@ void setup(){
   pinMode(SW2,INPUT_PULLUP);
   pinMode(SW3,INPUT_PULLUP);
   pinMode(SW4,INPUT_PULLUP);
-  pinMode(SW5,INPUT);  
+  pinMode(SW5,INPUT);
+  pinMode(BATEN,OUTPUT);
+  //digitalWrite(BATEN,HIGH); 
   rgb(RGBR,50);
   rgb(RGBG,50);
   rgb(RGBB,50);
   powerup();
-  //while(digitalRead(SW5)==HIGH){int i=1;}  //----------RTC init & config
-  //rtc.setTime(0, 41, 17, 8, 8, 2023);       //---------ONLY REDO AFTER TOTAL POWER LOSS
-  // RTC=rtc.getTime("%A, %B %d %Y %H:%M:%S");
+  //while(digitalRead(SW3)==HIGH){int i=1;}  //----------RTC init & config
+  //rtc.setTime(0, 34, 9, 17, 8, 2023);       //---------ONLY REDO AFTER TOTAL POWER LOSS
+  //RTC=rtc.getTime("%A, %B %d %Y %H:%M:%S");
   
 
      if(!SD.begin(1)){
@@ -146,13 +155,15 @@ void loop(){
       if(serialState==1){Serial.begin(115200);rgb(RGBB,500);rgb(RGBB,500);}
       if(serialState==0){Serial.end();rgb(RGBR,500);rgb(RGBR,50);}
       }
+    //Serial.println(analogRead(BATTERY));
+    //delay(1000);
     
     unsigned long currentTime = millis();
     if (currentTime - previousTask1Time >= task1Interval) {
       previousTask1Time = currentTime;
        if (recordState==1){
         if(runmode==0){
-        myData.id = 1;
+        myData.id = 1; //-------------------------------------------------------change base on board
         myData.x = temperature1;
         myData.y = temperature2;
         esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &myData, sizeof(myData));
@@ -252,6 +263,72 @@ if (digitalRead(SW2) == LOW) {
   }
 //---------LOOP END--------------------------------------------------------------------------------------------
 //---------------FUNCTIONS DEFINITION BEGIN---------
+void OnDataRecv(const uint8_t * mac_addr, const uint8_t *incomingData, int len) {
+  char macStr[18];
+  Serial.print("Packet received from: ");
+  snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
+   mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+  //Serial.println(macStr);
+  memcpy(&myCommand, incomingData, sizeof(myCommand));
+  Serial.print("command id:");
+  Serial.println(myCommand.id);
+  Serial.print("command data:");
+  Serial.println(myCommand.cmd);
+  if(myCommand.id==10){
+    Serial.println("syncing time...");
+    rtc.setTime(myCommand.cmd);
+    timeTone();
+    }
+  if(myCommand.id==20){Serial.println("Start recording.."); executeTask1();}
+  if(myCommand.id==30){Serial.println("Stop recording..");executeTask1();}
+  if(myCommand.id==40){Serial.println("Powering off");executeTask2();}
+}
+void timeTone(){
+  rgb(RGBB,50);
+  beep(3951,100);
+  beep(3136,500);
+  delay(500);
+  rgb(RGBB,50);
+  beep(3951,100);
+  beep(3136,500);
+  delay(500);
+  rgb(RGBB,50);
+  beep(3951,100);
+  beep(3136,500);
+
+  }
+void startRecordTone(){
+  rgb(RGBR,50);
+  beep(2093,100);
+  delay(500);
+    rgb(RGBR,50);
+  beep(2093,100);
+  delay(500);
+    rgb(RGBR,50);
+  beep(2093,100);
+  delay(500);
+  rgb(RGBG,50);
+  beep(3136,500);
+  }
+void stopRecordTone(){
+  rgb(RGBG,50);
+  beep(3951,200);
+  beep(1976,200);
+  beep(988,500);
+  delay(500);
+    rgb(RGBG,50);
+  beep(3951,200);
+  beep(1976,200);
+  beep(988,500);
+  delay(500);
+    rgb(RGBG,50);
+  beep(3951,200);
+  beep(1976,200);
+  beep(988,500);
+  delay(500);
+  
+
+  }
 void onlineTone(){
   int tempo=100;
   digitalWrite(RGBB,HIGH);
@@ -285,6 +362,7 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 void executeTask1(){
    recordState = (recordState + 1) % 2;
      if (recordState==1){
+      startRecordTone();
     idleState=0;
     String RTC= rtc.getTime("%A,%B%d%Y-%H%M%S");
     namefile="/SensorData/"+RTC+".csv";
@@ -293,6 +371,7 @@ void executeTask1(){
       }
       if (recordState==0){
          idleState=1;
+         stopRecordTone();
         }
     rgb(RGBR,50);
     beep(4000,25);
@@ -502,4 +581,4 @@ void testFileIO(fs::FS &fs, const char * path){
     Serial.printf("%u bytes written for %u ms\n", 2048 * 512, end);
     file.close();
 }
-//---------------FUNCTIONS DEFINITION BEGIN---------
+//---------------FUNCTIONS DEFINITION END---------
