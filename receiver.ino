@@ -91,7 +91,8 @@ int runmode=0;//0-online//1-offline
 int remoteState=0;
 void setup() {
   Serial.begin(115200);
-  rtc.setTime(0, 0, 15, 17, 8, 2023);
+  //while(SW1==HIGH){int i=0;}
+  //rtc.setTime(0, 0, 10, 18, 8, 2023);
   SPI.begin(7,8,9,-1);
   WiFi.mode(WIFI_STA);
   if (esp_now_init() != ESP_OK) {Serial.println("Error initializing ESP-NOW");return;}
@@ -227,6 +228,19 @@ void loop() {
         SD.end();
         SPI.end();
     }}
+      unsigned long currentTime2 = millis();
+      if (currentTime2 - previousTask2Time >= task2Interval) {
+      previousTask2Time = currentTime2;
+     if (recordState==0){
+     digitalWrite(RGBG,HIGH);
+     digitalWrite(RGBR,HIGH);
+     digitalWrite(RGBB,HIGH);
+     delay(50);
+     digitalWrite(RGBG,LOW);
+     digitalWrite(RGBR,LOW);
+     digitalWrite(RGBB,LOW);
+      
+      }}
   
       if (digitalRead(SW1) == LOW) {
       if (!taskExecuted1) {
