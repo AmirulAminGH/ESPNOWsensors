@@ -163,7 +163,7 @@ void loop(){
       previousTask1Time = currentTime;
        if (recordState==1){
         if(runmode==0){
-        myData.id = 1; //-------------------------------------------------------change base on board
+        myData.id = 4; //-------------------------------------------------------change base on board
         myData.x = temperature1;
         myData.y = temperature2;
         esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &myData, sizeof(myData));
@@ -203,6 +203,8 @@ void loop(){
         Serial.println(temperature1);
         Serial.print("C2 = "); 
         Serial.println(temperature2);
+        if (isnan(temperature1)){Serial.println("Sensor 1 disconnected");warning(1);}
+        if (isnan(temperature2)){Serial.println("Sensor 2 disconnected");warning(2);}
       }
   }
    unsigned long currentTime2 = millis();
@@ -216,6 +218,15 @@ void loop(){
      digitalWrite(RGBG,LOW);
      digitalWrite(RGBR,LOW);
      digitalWrite(RGBB,LOW);
+
+        MAX6675 thermocouple1(CLK1, TEMP1, MISO1);
+        MAX6675 thermocouple2(CLK1, TEMP2, MISO1);
+        float check1=thermocouple1.readCelsius();
+        float check2=thermocouple2.readCelsius();
+        if (isnan(check1)){Serial.println("Sensor 1 disconnected");warning(1);}
+        if (isnan(check2)){Serial.println("Sensor 2 disconnected");warning(2);}
+        
+        
     }
   }
 
@@ -283,6 +294,13 @@ void OnDataRecv(const uint8_t * mac_addr, const uint8_t *incomingData, int len) 
   if(myCommand.id==30){Serial.println("Stop recording..");executeTask1();}
   if(myCommand.id==40){Serial.println("Powering off");executeTask2();}
 }
+void warning(int count){
+  rgb(RGBR,50);
+  beep(988,200);
+  for(int i=0;i<count;i++){
+  beep(3000,100);
+  }
+  }
 void timeTone(){
   rgb(RGBB,50);
   beep(3951,100);
